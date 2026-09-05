@@ -10,16 +10,18 @@
 #   vlcsync.sh subs    <video> <subtitle.srt> [-o output.srt]
 #
 # Two detection backends, pick with --model:
-#   heuristic (default) -- mouth-opening amplitude vs. audio energy
-#     correlation (MediaPipe + numpy). Fast, no extra install. TESTED
-#     UNRELIABLE on real content: against a known 5000ms offset it returned
-#     scattered, mostly-wrong results (see README Testing Results). Use it
-#     only as a rough first guess, not as an answer to trust.
-#   syncnet -- open-source joonson/syncnet_python (S3FD face detection +
-#     tracking, then a trained two-stream CNN). Heavier (PyTorch etc.) --
-#     run `install-syncnet` once first -- but consistently landed within
-#     ~120ms of the true offset across independent windows in testing.
-#     Recommended over heuristic whenever it's installed.
+#   syncnet (default) -- open-source joonson/syncnet_python (S3FD face
+#     detection + tracking, then a trained two-stream CNN). Heavier
+#     (PyTorch etc.) -- run `install-syncnet` once first -- but consistently
+#     landed within ~120ms of the true offset across independent windows in
+#     testing. If it isn't installed yet, detect/fix fail loudly with
+#     install instructions rather than silently using the fallback below.
+#   heuristic -- mouth-opening amplitude vs. audio energy correlation
+#     (MediaPipe + numpy). Fast, no extra install. TESTED UNRELIABLE on real
+#     content: against a known 5000ms offset it returned scattered,
+#     mostly-wrong results (see README Testing Results). Only kept as a
+#     zero-install fallback -- pass --model heuristic explicitly to use it,
+#     and treat its output as a rough guess, not an answer.
 # Both backends analyze a short window, not the whole file, so large
 # 200-400MB movies are fine -- pick --start/--duration around a clear
 # dialogue scene.
@@ -53,7 +55,7 @@ launch_vlc() {
 }
 
 usage() {
-  sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'
   exit 1
 }
 
@@ -106,11 +108,15 @@ cmd_install_syncnet() {
 }
 
 # Dispatches to the chosen detection backend. Recognizes --model
-# heuristic|syncnet (default heuristic); everything else is passed through
-# to that backend's script.
+# heuristic|syncnet (default syncnet -- it's the one that's actually
+# reliable; see README Testing Results). If syncnet isn't installed yet,
+# this fails loudly with instructions rather than silently falling back to
+# the unreliable heuristic. Pass --model heuristic explicitly to opt into
+# the zero-install fallback anyway. Everything else is passed through to
+# that backend's script.
 _run_detect_raw() {
   local video="$1"; shift
-  local model="heuristic"
+  local model="syncnet"
   local rest=()
 
   while [ $# -gt 0 ]; do
