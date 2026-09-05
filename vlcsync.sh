@@ -6,8 +6,25 @@
 #   vlcsync.sh install
 #   vlcsync.sh install-syncnet
 #   vlcsync.sh detect  <video> [--model heuristic|syncnet] [--start S] [--duration S] [--max-offset MS]
-#   vlcsync.sh fix     <video> [--offset MS | (detect options)] [--apply] [--play]
+#   vlcsync.sh scan    <video> [--model heuristic|syncnet] [--windows N] [--duration S] [--max-offset MS] [--margin S]
+#   vlcsync.sh fix     <video> [--offset MS | --scan | (detect options)] [--apply] [--play]
 #   vlcsync.sh subs    <video> <subtitle.srt> [-o output.srt]
+#
+# `scan` probes many short, cheap candidate windows across the file
+# (MediaPipe face/voice coverage, no offset math) to find ones actually
+# worth analyzing, then runs the real (usually much slower) detector only on
+# the best of those -- in parallel. This matters because --model syncnet's
+# own face detector is the slow part (~11fps on CPU; a naive 20s window
+# costs ~45s, and a heavily-edited file can burn through several failed
+# windows before finding a usable one), while the same face/voice presence
+# check via MediaPipe costs ~5s. Reports the median of the successful runs
+# plus how many agreed with it -- that cross-window agreement is a better
+# real-world confidence signal than either backend's own per-run confidence
+# score. (A single longer window was tried first and found NOT to help --
+# it can dilute a good result by spanning a scene change, and costs runtime
+# roughly linear in duration -- probing+parallelism is what actually worked:
+# ~2.5-3 min instead of that approach's 18+ min worst case in testing, for
+# the same accuracy.) `fix --scan` uses this instead of a single detect call.
 #
 # Two detection backends, pick with --model:
 #   syncnet (default) -- open-source joonson/syncnet_python (S3FD face
@@ -33,6 +50,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DETECT_PY="$SCRIPT_DIR/av_sync_detect.py"
 SYNCNET_DETECT_PY="$SCRIPT_DIR/syncnet_detect.py"
+SCAN_PY="$SCRIPT_DIR/scan_detect.py"
 SYNCNET_DIR="$SCRIPT_DIR/third_party/syncnet_python"
 VENV_DIR="$SCRIPT_DIR/.venv"
 
@@ -57,7 +75,7 @@ launch_vlc() {
 }
 
 usage() {
-  sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,46p' "$0" | sed 's/^# \{0,1\}//'
   exit 1
 }
 
@@ -148,13 +166,27 @@ detect_offset_ms() {
   _run_detect_raw "$video" "$@" 2>&2 | tail -n1
 }
 
+cmd_scan() {
+  [ $# -ge 1 ] || { echo "usage: $0 scan <video> [--model heuristic|syncnet] [--windows N] [--duration S] [--max-offset MS] [--margin S]" >&2; exit 1; }
+  require_cmd ffmpeg
+  "$PY" "$SCAN_PY" "$@"
+}
+
+# Runs scan and returns just the numeric consensus offset_ms on stdout,
+# letting all diagnostics pass through to stderr live.
+scan_offset_ms() {
+  local video="$1"; shift
+  "$PY" "$SCAN_PY" "$video" "$@" 2>&2 | tail -n1
+}
+
 cmd_fix() {
-  [ $# -ge 1 ] || { echo "usage: $0 fix <video> [--offset MS] [--apply] [--play] [detect options]" >&2; exit 1; }
+  [ $# -ge 1 ] || { echo "usage: $0 fix <video> [--offset MS] [--scan] [--apply] [--play] [detect/scan options]" >&2; exit 1; }
   local video="$1"; shift
 
   local offset=""
   local apply=false
   local play=false
+  local scan=false
   local detect_args=()
 
   while [ $# -gt 0 ]; do
@@ -162,6 +194,7 @@ cmd_fix() {
       --offset) offset="$2"; shift 2 ;;
       --apply) apply=true; shift ;;
       --play) play=true; shift ;;
+      --scan) scan=true; shift ;;
       --*) detect_args+=("$1" "$2"); shift 2 ;;
       *) echo "unknown option: $1" >&2; exit 1 ;;
     esac
@@ -169,8 +202,13 @@ cmd_fix() {
 
   if [ -z "$offset" ]; then
     require_cmd ffmpeg
-    echo "==> no --offset given, running auto-detection..." >&2
-    offset="$(detect_offset_ms "$video" "${detect_args[@]}")"
+    if $scan; then
+      echo "==> no --offset given, running multi-window scan..." >&2
+      offset="$(scan_offset_ms "$video" "${detect_args[@]}")"
+    else
+      echo "==> no --offset given, running auto-detection..." >&2
+      offset="$(detect_offset_ms "$video" "${detect_args[@]}")"
+    fi
     echo "==> detected offset: ${offset} ms" >&2
   fi
 
@@ -218,6 +256,7 @@ main() {
     install) cmd_install "$@" ;;
     install-syncnet) cmd_install_syncnet "$@" ;;
     detect) cmd_detect "$@" ;;
+    scan) cmd_scan "$@" ;;
     fix) cmd_fix "$@" ;;
     subs) cmd_subs "$@" ;;
     -h|--help) usage ;;

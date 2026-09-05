@@ -79,11 +79,32 @@ command's auto-launch/`--play` to work.
 
 # Subtitle sync (ffsubsync, audio-based)
 ./vlcsync.sh subs movie.mp4 subs.srt
+
+# Hands-off: scan the file for good windows and use their consensus (see below)
+./vlcsync.sh fix movie.mp4 --scan --apply
 ```
 
 Sign convention: positive `offset_ms` means audio is ahead of video and
 should be delayed; negative means audio is behind and should be advanced.
 This matches VLC's `--audio-desync` and ffmpeg's `-itsoffset` directly.
+
+### `scan` — for when you don't want to hand-pick a window
+
+`--start`/`--duration` require picking a window with a visible talking face
+yourself. `scan` automates that: it cheaply probes many short candidate
+windows spread across the file for face/voice presence (MediaPipe, no
+offset math — a few seconds each), then runs the real detector only on the
+best of those, in parallel, and reports the median offset plus how many
+windows agreed with it.
+
+```bash
+./vlcsync.sh scan movie.mp4                    # defaults: syncnet, 6 windows, ~2-3 min on a ~40min file
+./vlcsync.sh scan movie.mp4 --windows 10        # more windows = more robust median, more time
+./vlcsync.sh fix movie.mp4 --scan --apply       # scan, then remux using the consensus offset
+```
+
+This exists because two more obvious approaches were tried first and didn't
+hold up — see [Scan: what didn't work first](#scan-what-didnt-work-first).
 
 ## Testing Results
 
@@ -155,6 +176,60 @@ this tool's own threshold. **Cross-checking 2-3 non-overlapping windows and
 looking for agreement across them was a better real-world confidence signal
 here than the raw confidence number either backend reports** — treat a
 single run's confidence label as a hint, not a verdict.
+
+### Scan: what didn't work first
+
+**A single longer window, tried on the same file:** tripling `--duration`
+from 20s to 60s at a window that was already working well (1200s, syncnet,
+30ms off) made it *worse* — wrong sign, +5810ms instead of -5030ms — because
+the extra time ran into a different scene and a single global correlation
+has no way to know part of the window stopped being useful. On syncnet's
+known failure window (1800s, 12 scene cuts in 20s), tripling the duration
+found 32 scene cuts in 60s and still failed — that whole region is just
+rapid-cut throughout, so more duration at the same starting point doesn't
+help if the content itself never holds still. **Longer single windows are
+not a fix for either backend.**
+
+**Fixed, evenly-spaced windows with retries, tried next:** running syncnet
+on 6 windows spread evenly across the file, sequentially, with up to 3
+retries each on a nearby offset if a slot failed — worked, but slowly:
+~3-18 minutes depending on how many slots needed retries, because each
+syncnet window costs ~45s regardless of whether it succeeds (its own face
+detector, S3FD via PyTorch, runs at only ~11fps on CPU, and that cost is
+paid before the pipeline even knows whether a usable face track exists).
+On this particular file, all 6 initial evenly-spaced slots happened to land
+on rapid-cut stretches and needed retries. **Accurate, but too slow to be
+practical.**
+
+**Cheap probing + parallelism, what actually shipped:** MediaPipe (already
+used by the heuristic backend) can answer "is there a continuously-visible
+face and audible speech here" in ~5s for an 8s clip — about 9x faster than
+paying for syncnet's own face detector just to find out a window is
+unusable. `scan` now probes ~50-80 short candidates across the file with
+MediaPipe (ignoring the heuristic's own offset answer, which isn't reliable
+enough to trust — only its face-coverage/voiced-fraction numbers), keeps
+the ones that clear a coverage threshold and are spread apart, oversamples
+by 2x to absorb the cases where a probe passes but the real detector still
+fails (they don't perfectly agree — probing is short/MediaPipe, real
+detection is longer/S3FD with a strict 4-second *continuous* track
+requirement), and runs the real detector on all of them concurrently
+(thread-capped to avoid the parallel processes fighting each other for
+CPU). Result on the same file, run three times:
+
+| Run | Windows selected | Succeeded | Consensus offset | Time |
+|---|---|---|---|---|
+| 1 | 6 (clustered ~1065-1250s + one at 289s) | 4/6, agreement 3/4 | -4880ms (120ms off) | 3:17 |
+| 2 (wider spacing enforced) | 5 (spread 60-2438s) | 2/5, agreement 0/2 | -4560ms (440ms off) | 2:16 |
+| 3 (+ 2x oversampling) | 10 (spread 60-2438s) | 3/10, agreement 2/3 | -4880ms (120ms off) | 2:43 |
+
+8 cores (6P+2E) on the test machine; `--jobs` defaults to `cpu_count - 1`.
+Consensus landed within 120-440ms of the true -5000ms across all three
+runs — accurate every time — in roughly 2-3.5 minutes instead of the
+naive approach's 3-18 minute range, on a ~42-minute file. Run 2 shows why
+oversampling (run 3) matters: enforcing real spread across the file is
+good for independence, but it also means fewer of the passing candidates
+are usable, so without oversampling you can end up with only 2 successes
+and 0 agreement between them.
 
 ## macOS-specific fixes baked in
 
