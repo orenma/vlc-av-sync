@@ -16,12 +16,14 @@
 #     landed within ~120ms of the true offset across independent windows in
 #     testing. If it isn't installed yet, detect/fix fail loudly with
 #     install instructions rather than silently using the fallback below.
-#   heuristic -- mouth-opening amplitude vs. audio energy correlation
-#     (MediaPipe + numpy). Fast, no extra install. TESTED UNRELIABLE on real
-#     content: against a known 5000ms offset it returned scattered,
-#     mostly-wrong results (see README Testing Results). Only kept as a
-#     zero-install fallback -- pass --model heuristic explicitly to use it,
-#     and treat its output as a rough guess, not an answer.
+#   heuristic -- mouth-movement (band-pass filtered) vs. VAD-gated audio
+#     energy correlation (MediaPipe + numpy + webrtcvad). Fast, no extra
+#     install. IMPROVED BUT STILL EXPERIMENTAL: 4 of 6 test windows landed
+#     within ~600ms of a known 5000ms offset after adding VAD gating,
+#     band-pass filtering, and a face-coverage check, but one window was
+#     still off by 4.7s (see README Testing Results). Pass --model
+#     heuristic explicitly to use it, and cross-check multiple windows --
+#     don't trust a single run's confidence score alone.
 # Both backends analyze a short window, not the whole file, so large
 # 200-400MB movies are fine -- pick --start/--duration around a clear
 # dialogue scene.
@@ -55,7 +57,7 @@ launch_vlc() {
 }
 
 usage() {
-  sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'
   exit 1
 }
 

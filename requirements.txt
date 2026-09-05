@@ -14,6 +14,11 @@ mediapipe==0.10.13
 numpy
 scipy
 soundfile
+# Voice-activity detection used to gate the heuristic backend's audio
+# envelope. "webrtcvad-wheels" is a maintained fork with working prebuilt
+# wheels (the original "webrtcvad" package has build issues on newer
+# Python); both install the same `webrtcvad` module.
+webrtcvad-wheels
 ffsubsync
 # Bundles a static ffmpeg binary -- lets the venv install skip brew/apt for it.
 imageio-ffmpeg

@@ -14,14 +14,17 @@ Two detection backends, selected with `--model`:
   across independent windows of the same file. If it isn't installed yet,
   `detect`/`fix` fail loudly with install instructions rather than quietly
   falling back to the unreliable option below.
-- **heuristic** (opt-in via `--model heuristic`) — mouth-opening amplitude
-  (MediaPipe face mesh) cross-correlated against the audio's RMS energy
-  envelope. Fast, no extra install. **⚠️ Status: unreliable, not
-  recommended.** Tested against a known offset it returned scattered,
-  mostly-wrong results (see [Testing Results](#testing-results)) — it needs
-  real work (a better signal than RMS energy, at minimum) before it should
-  be trusted. Kept only as a zero-install fallback, printed with a warning
-  every time it runs.
+- **heuristic** (opt-in via `--model heuristic`) — mouth-movement amplitude
+  (MediaPipe face mesh, band-pass filtered to speech-articulation rate)
+  cross-correlated against a voice-activity-gated audio energy envelope.
+  Fast, no extra install. **⚠️ Status: improved but still experimental.**
+  An initial version tested outright unreliable (wrong sign on half the
+  test windows); adding VAD gating, band-pass filtering, and a face-coverage
+  check got 4 of 6 windows within ~600ms of ground truth — real progress,
+  but one window was still off by 4.7 seconds, so it's not yet trustworthy
+  as a sole source of truth (see [Testing Results](#testing-results) for
+  both versions' full numbers). Prefer syncnet when available; use this
+  only as a rough guess, cross-checked against multiple windows.
 
 Both backends analyze a short window (`--start`/`--duration`) you pick
 around a clear dialogue scene — never the whole file — so large movie files
@@ -91,7 +94,9 @@ Pro, Python 3.12 venv. Each row is an independent, non-overlapping 20-second
 window (`--start N --duration 20 --max-offset 6000`); ground truth is
 **-5000ms** throughout.
 
-### heuristic — unreliable
+### heuristic — improved, still not fully reliable
+
+**v1** (raw RMS energy vs. absolute mouth-opening ratio, no gating):
 
 | `--start` | offset returned | correlation | face frames | vs. true -5000ms |
 |---|---|---|---|---|
@@ -103,12 +108,37 @@ window (`--start N --duration 20 --max-offset 6000`); ground truth is
 | 1800s | +1540ms | 0.198 | 110/300 | off by 6540ms |
 
 Not one of the six windows landed anywhere near correct, and three got the
-sign wrong. The RMS-energy-vs-mouth-amplitude correlation this backend
-relies on just isn't a strong enough signal on real dialogue — mouth
-movement and audio loudness correlate loosely at best, and this file's
-noise floor (music, ambient sound, multiple speakers) buries it. This
-backend needs real algorithmic work, not a parameter tweak, before it
-should be trusted for anything beyond a rough first guess.
+sign wrong. Root cause: raw RMS energy reacts to the whole track (music,
+ambient noise, other speakers) rather than specifically to this face's
+speech, the mouth signal was a static open/closed ratio rather than
+movement, nothing filtered for the ~1.5-6Hz rate speech articulation
+actually happens at, and windows with sparse/interrupted face detection
+were scored the same as clean ones.
+
+**v2** (same file, same windows, after fixing all four of those): audio
+gated by WebRTC voice-activity detection instead of raw RMS, both signals
+band-pass filtered to 1.5-6Hz before correlating, and a face-coverage
+check (≥50% of sampled frames) that downgrades confidence instead of
+silently trusting sparse tracking:
+
+| `--start` | offset returned | correlation | face coverage | voiced % | vs. true -5000ms |
+|---|---|---|---|---|---|
+| 120s | -4390ms | 0.267 | 86% | 86% | off by 610ms, correct sign |
+| 300s | -330ms | 0.263 | 84% | 90% | off by 4670ms — still wrong |
+| 600s | -3250ms | 0.221 | 20% (flagged low-confidence) | 95% | off by 1750ms |
+| 900s | 0ms | -2.0 (no face) | 0% | 96% | no result — face never detected |
+| 1200s | -5030ms | 0.247 | 94% | 89% | off by 30ms — essentially exact |
+| 1800s | -4910ms | 0.219 | 44% (flagged low-confidence) | 95% | off by 90ms |
+
+4 of 6 windows now land within ~600ms with the correct sign (two of them
+within 100ms), and the two weak spots correctly flag themselves as
+low-confidence via the new coverage check rather than confidently
+returning garbage — a real improvement, not a wash. But 300s is still off
+by 4.7 seconds despite "medium" confidence, which means the confidence
+score still isn't fully trustworthy on its own. **Still not recommended as
+a sole source of truth** — cross-checking multiple windows (or against
+syncnet, when available) remains necessary, though the signal is now
+usable as a genuine hint rather than noise.
 
 ### syncnet — consistent and accurate
 
