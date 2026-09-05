@@ -6,19 +6,22 @@ to VLC (`--audio-desync`) or write a corrected file with `ffmpeg`.
 
 Two detection backends, selected with `--model`:
 
-- **heuristic** (default) — mouth-opening amplitude (MediaPipe face mesh)
-  cross-correlated against the audio's RMS energy envelope. Fast, no extra
-  install. **⚠️ Status: unreliable, not recommended.** Tested against a
-  known offset it returned scattered, mostly-wrong results (see
-  [Testing Results](#testing-results)) — it needs real work (a better
-  signal than RMS energy, at minimum) before it should be trusted. Kept in
-  the tool as a zero-install fallback and printed with a warning every time
-  it runs, not as a working alternative to syncnet.
-- **syncnet** (recommended) — the open-source [joonson/syncnet_python](https://github.com/joonson/syncnet_python)
+- **syncnet** (default) — the open-source [joonson/syncnet_python](https://github.com/joonson/syncnet_python)
   pipeline (S3FD face detection + tracking, then a CNN trained specifically
   for audio/video sync scoring). Heavier (PyTorch etc., one-time extra
-  install), but reliably found a known 5-second offset within ~120ms,
-  consistently across independent windows of the same file.
+  install — run `install-syncnet` / `setup_venv.sh --with-syncnet` first),
+  but reliably found a known 5-second offset within ~120ms, consistently
+  across independent windows of the same file. If it isn't installed yet,
+  `detect`/`fix` fail loudly with install instructions rather than quietly
+  falling back to the unreliable option below.
+- **heuristic** (opt-in via `--model heuristic`) — mouth-opening amplitude
+  (MediaPipe face mesh) cross-correlated against the audio's RMS energy
+  envelope. Fast, no extra install. **⚠️ Status: unreliable, not
+  recommended.** Tested against a known offset it returned scattered,
+  mostly-wrong results (see [Testing Results](#testing-results)) — it needs
+  real work (a better signal than RMS energy, at minimum) before it should
+  be trusted. Kept only as a zero-install fallback, printed with a warning
+  every time it runs.
 
 Both backends analyze a short window (`--start`/`--duration`) you pick
 around a clear dialogue scene — never the whole file — so large movie files
