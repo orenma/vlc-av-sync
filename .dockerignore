@@ -1,0 +1,10 @@
+.venv
+third_party
+*.mp4
+*.mkv
+*.avi
+*.mov
+*.srt
+__pycache__
+*.pyc
+.git

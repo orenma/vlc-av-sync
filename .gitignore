@@ -1,0 +1,12 @@
+.venv/
+third_party/
+models/
+__pycache__/
+*.pyc
+
+# Test/media files -- not meant for the repo
+*.mp4
+*.mkv
+*.avi
+*.mov
+*.srt

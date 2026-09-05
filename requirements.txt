@@ -1,0 +1,19 @@
+# Base deps for the heuristic detector, subtitle sync, and remuxing.
+# opencv-*-headless avoids the libGL system dependency on Linux -- we never
+# open a GUI window (cv2.imshow etc.), only decode frames, so headless is
+# strictly better here on every platform.
+opencv-contrib-python-headless
+# Pinned: mediapipe's 0.10.14+ / 1.0.x macOS arm64 wheels are linked against
+# a newer ObjC runtime symbol than macOS <13 ships, and fail with
+# "Symbol not found: _objc_claimAutoreleasedReturnValue" at import/use time
+# (a packaging bug on Google's end, not a version-range issue on ours).
+# 0.10.13 is the newest confirmed-working release on macOS 12.x arm64 and
+# still has the legacy mp.solutions.face_mesh API this script uses. If
+# you're on macOS 13+, feel free to bump this.
+mediapipe==0.10.13
+numpy
+scipy
+soundfile
+ffsubsync
+# Bundles a static ffmpeg binary -- lets the venv install skip brew/apt for it.
+imageio-ffmpeg

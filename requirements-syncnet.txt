@@ -1,0 +1,11 @@
+# Extra deps for the --model syncnet backend (joonson/syncnet_python).
+# Install requirements.txt first -- this assumes opencv/numpy/scipy are
+# already present. On Linux/Docker, install torch/torchvision/torchaudio
+# separately from the CPU wheel index first to avoid pulling CUDA builds;
+# see Dockerfile.
+torch
+torchvision
+torchaudio
+scenedetect==0.6.7.1
+python_speech_features
+tqdm
