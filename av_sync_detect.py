@@ -221,7 +221,7 @@ def main():
     print(
         "warning: this heuristic backend is experimental -- validate against --model syncnet "
         "if it's installed, or cross-check multiple --start windows for agreement, before "
-        "trusting its output (see README Testing Results).",
+        "trusting its output (see README Accuracy section).",
         file=sys.stderr,
     )
     print(f"analyzing {args.video} [{args.start:.1f}s .. {args.start + args.duration:.1f}s] ...", file=sys.stderr)

@@ -30,17 +30,19 @@
 #   syncnet (default) -- open-source joonson/syncnet_python (S3FD face
 #     detection + tracking, then a trained two-stream CNN). Heavier
 #     (PyTorch etc.) -- run `install-syncnet` once first -- but consistently
-#     landed within ~120ms of the true offset across independent windows in
-#     testing. If it isn't installed yet, detect/fix fail loudly with
-#     install instructions rather than silently using the fallback below.
+#     agreed with itself within ~120ms across independent windows in
+#     testing (the actual offset was an approximate manual reference, not a
+#     verified-exact value -- see README Accuracy section). If it isn't
+#     installed yet, detect/fix fail loudly with install instructions
+#     rather than silently using the fallback below.
 #   heuristic -- mouth-movement (band-pass filtered) vs. VAD-gated audio
 #     energy correlation (MediaPipe + numpy + webrtcvad). Fast, no extra
 #     install. IMPROVED BUT STILL EXPERIMENTAL: 4 of 6 test windows landed
-#     within ~600ms of a known 5000ms offset after adding VAD gating,
-#     band-pass filtering, and a face-coverage check, but one window was
-#     still off by 4.7s (see README Testing Results). Pass --model
-#     heuristic explicitly to use it, and cross-check multiple windows --
-#     don't trust a single run's confidence score alone.
+#     within ~600ms of an approximate reference offset after adding VAD
+#     gating, band-pass filtering, and a face-coverage check, but one
+#     window was still off by 4.7s (see README Accuracy section). Pass
+#     --model heuristic explicitly to use it, and cross-check multiple
+#     windows -- don't trust a single run's confidence score alone.
 # Both backends analyze a short window, not the whole file, so large
 # 200-400MB movies are fine -- pick --start/--duration around a clear
 # dialogue scene.
@@ -75,7 +77,7 @@ launch_vlc() {
 }
 
 usage() {
-  sed -n '2,46p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,48p' "$0" | sed 's/^# \{0,1\}//'
   exit 1
 }
 
@@ -129,7 +131,7 @@ cmd_install_syncnet() {
 
 # Dispatches to the chosen detection backend. Recognizes --model
 # heuristic|syncnet (default syncnet -- it's the one that's actually
-# reliable; see README Testing Results). If syncnet isn't installed yet,
+# reliable; see README Accuracy section). If syncnet isn't installed yet,
 # this fails loudly with instructions rather than silently falling back to
 # the unreliable heuristic. Pass --model heuristic explicitly to opt into
 # the zero-install fallback anyway. Everything else is passed through to

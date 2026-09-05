@@ -61,10 +61,12 @@ def trim_clip(video, start, duration, out_path):
         raise RuntimeError(f"ffmpeg trim failed: {proc.stderr}")
 
 
-def run_syncnet_pipeline(syncnet_dir, python_bin, clip_path, data_dir, reference, vshift):
+def run_syncnet_pipeline(syncnet_dir, python_bin, clip_path, data_dir, reference, vshift,
+                          facedet_scale, min_track):
     pipeline_cmd = [
         python_bin, "run_pipeline.py",
         "--videofile", clip_path, "--reference", reference, "--data_dir", data_dir,
+        "--facedet_scale", str(facedet_scale), "--min_track", str(min_track),
     ]
     p1 = subprocess.run(pipeline_cmd, cwd=syncnet_dir, capture_output=True, text=True)
     log = p1.stdout + p1.stderr
@@ -102,6 +104,13 @@ def main():
                      help="Analysis window length, seconds (default: 20; needs ~4s+ of continuous "
                           "face detection to form a usable track)")
     ap.add_argument("--max-offset", type=float, default=2000.0, help="Max offset to search, ms (default: 2000)")
+    ap.add_argument("--facedet-scale", type=float, default=0.25,
+                     help="Downscale factor for face detection input (default: 0.25, upstream default). "
+                          "Lower = faster face detection, may miss smaller/farther faces.")
+    ap.add_argument("--min-track", type=int, default=100,
+                     help="Minimum continuous face-track length in frames (default: 100 = 4s at 25fps, "
+                          "upstream default). Lower allows shorter windows to produce a usable track, "
+                          "at the cost of tracking segments with less speech to correlate against.")
     ap.add_argument("--syncnet-dir", default=None, help="Path to the cloned syncnet_python repo")
     ap.add_argument("--python-bin", default=sys.executable, help="Python interpreter to run the SyncNet scripts with")
     ap.add_argument("--keep-temp", action="store_true", help="Keep the temp working directory (for debugging)")
@@ -122,7 +131,8 @@ def main():
 
         print("running SyncNet pipeline (face detection + tracking + sync scoring)...", file=sys.stderr)
         data_dir = os.path.join(workdir, "data")
-        log = run_syncnet_pipeline(syncnet_dir, args.python_bin, clip_path, data_dir, reference, vshift)
+        log = run_syncnet_pipeline(syncnet_dir, args.python_bin, clip_path, data_dir, reference, vshift,
+                                    args.facedet_scale, args.min_track)
 
         tracks = parse_tracks(log)
         if not tracks:
