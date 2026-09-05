@@ -8,13 +8,17 @@ Two detection backends, selected with `--model`:
 
 - **heuristic** (default) — mouth-opening amplitude (MediaPipe face mesh)
   cross-correlated against the audio's RMS energy envelope. Fast, no extra
-  install. In practice this is noisy on real content — treat it as a quick
-  first guess, not a reliable answer (see [Accuracy](#accuracy) below).
-- **syncnet** — the open-source [joonson/syncnet_python](https://github.com/joonson/syncnet_python)
+  install. **⚠️ Status: unreliable, not recommended.** Tested against a
+  known offset it returned scattered, mostly-wrong results (see
+  [Testing Results](#testing-results)) — it needs real work (a better
+  signal than RMS energy, at minimum) before it should be trusted. Kept in
+  the tool as a zero-install fallback and printed with a warning every time
+  it runs, not as a working alternative to syncnet.
+- **syncnet** (recommended) — the open-source [joonson/syncnet_python](https://github.com/joonson/syncnet_python)
   pipeline (S3FD face detection + tracking, then a CNN trained specifically
-  for audio/video sync scoring). Heavier (PyTorch etc.), but in testing
-  reliably found a known 5-second offset within ~100ms, consistently across
-  independent windows of the same file. Needs a one-time extra install.
+  for audio/video sync scoring). Heavier (PyTorch etc., one-time extra
+  install), but reliably found a known 5-second offset within ~120ms,
+  consistently across independent windows of the same file.
 
 Both backends analyze a short window (`--start`/`--duration`) you pick
 around a clear dialogue scene — never the whole file — so large movie files
@@ -75,19 +79,49 @@ Sign convention: positive `offset_ms` means audio is ahead of video and
 should be delayed; negative means audio is behind and should be advanced.
 This matches VLC's `--audio-desync` and ffmpeg's `-itsoffset` directly.
 
-## Accuracy
+## Testing Results
 
-Tested against a real file with a known, manually-verified 5-second audio
-delay:
+**Setup:** a real ~42-minute mp4 (852x480, 25fps, h264/aac) with audio
+manually confirmed delayed by exactly **5000ms** (fixed in VLC by setting
+Track Synchronization → Audio to -5000ms). Tested on macOS 12.6.5, Apple M1
+Pro, Python 3.12 venv. Each row is an independent, non-overlapping 20-second
+window (`--start N --duration 20 --max-offset 6000`); ground truth is
+**-5000ms** throughout.
 
-| Backend | 3 independent 20s windows | Verdict |
-|---|---|---|
-| heuristic | +2010ms, +5030ms, -580ms | Unreliable — scattered, no clear signal |
-| syncnet | -4920ms, -4960ms, -4880ms | Consistent, within ~120ms of the true -5000ms |
+### heuristic — unreliable
 
-Cross-checking 2-3 non-overlapping windows and looking for agreement is a
-better confidence signal than the raw confidence number either backend
-reports.
+| `--start` | offset returned | correlation | face frames | vs. true -5000ms |
+|---|---|---|---|---|
+| 120s | +2010ms | 0.232 | 215/300 | off by 7010ms |
+| 300s | +5030ms | 0.062 | 211/300 | off by 10030ms, wrong sign |
+| 600s | +5730ms | 0.198 | 50/300 | off by 10730ms, wrong sign |
+| 900s | 0ms | -2.0 (no face) | 0/300 | no result — face never detected |
+| 1200s | -580ms | 0.243 | 235/300 | off by 4420ms |
+| 1800s | +1540ms | 0.198 | 110/300 | off by 6540ms |
+
+Not one of the six windows landed anywhere near correct, and three got the
+sign wrong. The RMS-energy-vs-mouth-amplitude correlation this backend
+relies on just isn't a strong enough signal on real dialogue — mouth
+movement and audio loudness correlate loosely at best, and this file's
+noise floor (music, ambient sound, multiple speakers) buries it. This
+backend needs real algorithmic work, not a parameter tweak, before it
+should be trusted for anything beyond a rough first guess.
+
+### syncnet — consistent and accurate
+
+| `--start` | offset returned | syncnet confidence | tracks found | vs. true -5000ms |
+|---|---|---|---|---|
+| 120s | -4920ms | 1.852 | 2 | off by 80ms |
+| 300s | -4960ms | 1.764 | 1 | off by 40ms |
+| 1200s | -4880ms | 3.734 | 2 | off by 120ms |
+| 1800s | *(no result)* | — | 0 | window had 12 scene cuts in 20s — no face track lasted the required ~4s, correctly reported as a failure rather than a guess |
+
+All three successful windows landed within 120ms (3 frames at 25fps) of the
+true offset, despite each reporting only "low" or "medium" confidence by
+this tool's own threshold. **Cross-checking 2-3 non-overlapping windows and
+looking for agreement across them was a better real-world confidence signal
+here than the raw confidence number either backend reports** — treat a
+single run's confidence label as a hint, not a verdict.
 
 ## macOS-specific fixes baked in
 

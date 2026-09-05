@@ -176,6 +176,13 @@ def main():
     p.add_argument("--json", action="store_true", help="Print full JSON report to stdout instead of just the offset")
     args = p.parse_args()
 
+    print(
+        "warning: this heuristic backend has tested unreliable on real content -- "
+        "in a controlled test against a known 5000ms offset it returned scattered, "
+        "mostly-wrong results (see README Testing Results). Prefer --model syncnet "
+        "if it's installed.",
+        file=sys.stderr,
+    )
     print(f"analyzing {args.video} [{args.start:.1f}s .. {args.start + args.duration:.1f}s] ...", file=sys.stderr)
 
     vt, vv = extract_mouth_signal(args.video, args.start, args.duration, args.sample_fps)

@@ -11,14 +11,18 @@
 #
 # Two detection backends, pick with --model:
 #   heuristic (default) -- mouth-opening amplitude vs. audio energy
-#     correlation (MediaPipe + numpy). Fast, no extra install, needs a clear
-#     talking face + audible speech in the analysis window.
+#     correlation (MediaPipe + numpy). Fast, no extra install. TESTED
+#     UNRELIABLE on real content: against a known 5000ms offset it returned
+#     scattered, mostly-wrong results (see README Testing Results). Use it
+#     only as a rough first guess, not as an answer to trust.
 #   syncnet -- open-source joonson/syncnet_python (S3FD face detection +
-#     tracking, then a trained two-stream CNN). More accurate, handles
-#     harder shots, but heavier (PyTorch etc.) -- run `install-syncnet` once
-#     first. Both backends analyze a short window, not the whole file, so
-#     large 200-400MB movies are fine -- pick --start/--duration around a
-#     clear dialogue scene.
+#     tracking, then a trained two-stream CNN). Heavier (PyTorch etc.) --
+#     run `install-syncnet` once first -- but consistently landed within
+#     ~120ms of the true offset across independent windows in testing.
+#     Recommended over heuristic whenever it's installed.
+# Both backends analyze a short window, not the whole file, so large
+# 200-400MB movies are fine -- pick --start/--duration around a clear
+# dialogue scene.
 
 set -euo pipefail
 
@@ -49,7 +53,7 @@ launch_vlc() {
 }
 
 usage() {
-  sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'
   exit 1
 }
 
